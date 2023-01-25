@@ -54,12 +54,28 @@ type Controller = {
 }
 
 --[=[
+	@interface Component
+	.Tag string
+	.[any] any
+	@within KnitClient
+]=]
+
+type Component = {
+	Tag: string,
+	[any]: any,
+}
+
+--[=[
 	@interface Service
 	.[any] any
 	@within KnitClient
 ]=]
 type Service = {
 	[any]: any,
+}
+
+type ParallelInterface = {
+	[any]: any
 }
 
 --[=[
@@ -115,15 +131,24 @@ KnitClient.Util = script.Parent.Parent
 
 local Promise = require(KnitClient.Util.Promise)
 local Comm = require(KnitClient.Util.Comm)
+local ParallelComm = script.Parent.ParallelComm
 local ClientComm = Comm.ClientComm
+local ParallelClientComm = ParallelComm.ParallelClientComm
 
 local controllers: {[string]: Controller} = {}
 local services: {[string]: Service} = {}
 local servicesFolder = nil
+local actorsFolder = Instance.new("Folder")
+actorsFolder.Name = "ParallelActors"
+actorsFolder.Parent = script.Parent
 
 local started = false
 local startedComplete = false
 local onStartedComplete = Instance.new("BindableEvent")
+
+local AcceptableTypes = { "string", "number", "boolean", "Enum" }
+local UIDGen = 0
+
 
 
 local function DoesControllerExist(controllerName: string): boolean
@@ -218,6 +243,16 @@ function KnitClient.AddControllersDeep(parent: Instance): {Controller}
 	return addedControllers
 end
 
+function KnitClient.AddComponents(parent: Instance): {Component}
+	local addedComponents = {}
+
+	for _,v in ipairs(parent:GetDescendants()) do
+		if not v:IsA("ModuleScript") then continue end
+		table.insert(addedComponents, require(v))
+	end
+
+	return addedComponents
+end
 
 --[=[
 	Returns a Service object which is a reflection of the remote objects
@@ -294,6 +329,138 @@ function KnitClient.GetController(controllerName: string): Controller
 	assert(started, "Cannot call GetController until Knit has been started")
 	assert(type(controllerName) == "string", "ControllerName must be a string; got " .. type(controllerName))
 	error("Could not find controller \"" .. controllerName .. "\". Check to verify a controller with this name exists.", 2)
+end
+
+
+--[[
+
+	Module.Start
+
+	Actor
+	-- Actor.Start() --> Fire Bindable --> return whatever Start has
+	{__call}
+
+	Module;
+	loop through module
+
+
+	Module.Tick = 12434
+	Module.Blah = true
+
+
+	Module.Function = function()
+
+	end
+
+
+	__newindex
+
+	variable exists in {}
+	Invoke a bindable return value
+
+	Actor.Tick --> InvokeBindable
+	
+	Actor.Function
+
+	return function(self,...)
+		Bindable:Fire(...)
+	end
+
+
+	Actor:RunFunction("gredgerg")
+	Actor:GetVariable("wegrg)
+	
+]]
+
+local function NewUID()
+	UIDGen += 1
+	return UIDGen
+end
+
+function KnitClient.LoadParallel(Module : ModuleScript): ParallelInterface
+
+	local Actor = Instance.new("Actor")
+	local ActorCommScript = ParallelClientComm:Clone()
+	ActorCommScript.Parent = Actor
+
+	local ActorCommEvent = ActorCommScript.CommEvent
+	local ActorCommFunction = ActorCommScript.CommFunction
+
+	local SymbolsTable = {}
+
+	--[[
+		if doesn't exist in SymbolsTable
+		we pass {value = tbl, __type = "Symbol"}
+		{value = object, __type = "Symbol"}
+
+		HttpService:GenerateGUID
+		Actor[player] = "something"
+		{value = player, _id = "TableA", _type = "Symbol"}
+
+		in interface
+		if typeof(value) == table and value._type == "Symbol
+	]]
+
+	local function BuildSymbol(value)
+		local ID = NewUID()
+		SymbolsTable[value] = ID
+		return {_id = ID, _type = "symbol", value = value }
+	end
+
+	local Interface = setmetatable({},{
+		__index = function(_,index : any)
+			if index == nil then error("Attempt to index table with nil value", 3) end
+
+			local SerializedIndex = index
+			if not table.find(AcceptableTypes, typeof(index)) then SerializedIndex = SymbolsTable[index] or BuildSymbol(index) end
+
+			local IndexValue = ActorCommFunction:Invoke("GetIndex",SerializedIndex)
+
+			if typeof(IndexValue) == "table" and IndexValue._type == "function" then
+				return function(...)
+					return ActorCommFunction:Invoke("CallFunction",IndexValue.path,...)
+				end
+			elseif typeof(IndexValue) == "table" and IndexValue._type == "symbol" then
+				return IndexValue.value
+			else
+				return IndexValue
+			end
+		end,
+		__newindex = function(_,index : any, value : any)
+			if index == nil then error("Attempt to index table with nil value", 3) end
+
+			local SerializedIndex = index
+			if not table.find(AcceptableTypes, typeof(index)) then SerializedIndex = SymbolsTable[index] or BuildSymbol(index) end
+			if value == nil then SymbolsTable[index] = nil end
+			
+			--//TODO: Add function serialization using the below API:
+			--[[
+				if it's a module
+				Actor.Start = Actor:SerializeFunction(module, "Run")
+				
+				{
+					module = ModuleScript,
+					path = "Start",
+					_type = "function"
+				}
+			]]
+			ActorCommEvent:Fire("SetIndex",SerializedIndex,value)
+		end
+	})
+
+	Actor.Parent = actorsFolder
+	task.defer(function()
+		ActorCommScript.Enabled = true
+	end)
+
+	local InitReply
+	repeat
+		InitReply = ActorCommEvent.Event:Wait()
+	until InitReply == "Initialized"
+
+	ActorCommEvent:Fire("LoadModule",Module)
+	
+	return Interface :: ParallelInterface
 end
 
 

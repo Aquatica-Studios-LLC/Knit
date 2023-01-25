@@ -16,7 +16,7 @@ local function BuildSymbol(id)
     return Symbol
 end
 
-local Commands = {
+local Commands; Commands = {
     LoadModule = function(targetModule)
         Module = require(targetModule)
     end,
@@ -56,6 +56,9 @@ local Commands = {
             functionPath = SymbolsTable[functionPath.path]
         end
         return Module[functionPath](...)
+    end,
+    CallMethod = function(functionPath,...)
+        Commands.CallFunction(functionPath,Module,...)
     end
 }
 

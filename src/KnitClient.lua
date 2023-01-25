@@ -407,7 +407,7 @@ function KnitClient.LoadParallel(Module : ModuleScript): ParallelInterface
 		return {_id = ID, _type = "symbol", value = value }
 	end
 
-	local Interface = setmetatable({},{
+	local Interface; Interface = setmetatable({},{
 		__index = function(_,index : any)
 			if index == nil then error("Attempt to index table with nil value", 3) end
 
@@ -417,8 +417,12 @@ function KnitClient.LoadParallel(Module : ModuleScript): ParallelInterface
 			local IndexValue = ActorCommFunction:Invoke("GetIndex",SerializedIndex)
 
 			if typeof(IndexValue) == "table" and IndexValue._type == "function" then
-				return function(...)
-					return ActorCommFunction:Invoke("CallFunction",IndexValue.path,...)
+				return function(Self,...)
+					if Self == Interface then
+						return ActorCommFunction:Invoke("CallMethod",IndexValue.path,...)
+					else
+						return ActorCommFunction:Invoke("CallFunction",IndexValue.path,Self,...)
+					end
 				end
 			elseif typeof(IndexValue) == "table" and IndexValue._type == "symbol" then
 				return IndexValue.value

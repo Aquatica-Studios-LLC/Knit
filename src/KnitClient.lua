@@ -261,7 +261,7 @@ end
 	```
 ]=]
 function KnitClient.CreateComponent(componentDef: ComponentDef): Component
-	assert(componentDef.Tag,"No tag was specified in component \"" .. componentDef.Name .. "\". Did you forget to define one?")
+	assert(componentDef.Tag,"No tag was specified in component \"" .. componentDef.Tag .. "\". Did you forget to define one?")
 	return Component.new(componentDef)
 end
 

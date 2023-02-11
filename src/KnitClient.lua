@@ -169,6 +169,7 @@ local Component = require(KnitClient.Util.Component)
 local ClientComm = Comm.ClientComm
 
 local controllers: {[string]: Controller} = {}
+local components: {[string]: Component} = {}
 local services: {[string]: Service} = {}
 local servicesFolder = nil
 
@@ -309,8 +310,10 @@ function KnitClient.AddComponents(parent: Instance): {Component}
 	for _,v in ipairs(parent:GetDescendants()) do
 		if not v:IsA("ModuleScript") then continue end
 		local Component = require(v)
+
 		assert(Component.Tag,"No tag was specified in component \"" .. v.Name .. "\". Did you forget to define one?")
 		table.insert(addedComponents, Component)
+		components[Component.Tag] = Component
 	end
 
 	return addedComponents
@@ -391,6 +394,24 @@ function KnitClient.GetController(controllerName: string): Controller
 	assert(started, "Cannot call GetController until Knit has been started")
 	assert(type(controllerName) == "string", "ControllerName must be a string; got " .. type(controllerName))
 	error("Could not find controller \"" .. controllerName .. "\". Check to verify a controller with this name exists.", 2)
+end
+
+--[=[
+	Gets the component by name, yields until it finds the component
+]=]
+function KnitClient.GetComponent(componentTag: string): Component
+	if components[componentTag] then
+		return components[componentTag]
+	else
+		local component = nil
+
+		repeat
+			component = components[componentTag]
+			task.wait(0.1)
+		until component ~= nil
+
+		return component
+	end
 end
 
 
